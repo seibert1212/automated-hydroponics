@@ -1,0 +1,497 @@
+esphome:
+  name: forty-six
+  friendly_name: forty six
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger: 
+  level: VERBOSE
+
+globals:
+  - id: "pump_state"
+    type: bool
+    restore_value: no
+    initial_value: "false"  
+ 
+  - id: manual_control_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "GZlR5/kt4jnRGtiUAwTlpRi/eXshXned7BsT07KPhRU="
+
+ota:
+  - platform: esphome
+    password: "6d0d012381e66a1e2ce977834a14d53a"
+
+wifi:                
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip: 
+    static_ip: 192.168.1.76
+    gateway: 192.168.1.1
+    subnet: 255.255.252.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Forty-Six Fallback Hotspot"
+    password: "3z31m4b2v3JG"
+
+mqtt:
+  broker: !secret mqtt_broker
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+  discovery_prefix: "homeassistant"
+  id: mqtt_client
+  on_message:     
+    - topic: "control/dosing" 
+      payload: "5.300"
+      then: 
+      
+i2c:
+    sda: GPIO21
+    scl: GPIO22
+    scan: True
+    frequency: 200kHz
+
+dallasng:
+  - pin: 4
+    update_interval: 3s
+
+external_components:
+  - source: github://nrandell/dallasng
+
+captive_portal:
+  
+binary_sensor:
+
+  - platform: gpio
+    pin: GPIO26
+    name: "Water Leak Sensor 4"
+    id: leak_sensor_4
+    device_class: moisture
+    filters:
+      - invert:  # The LM393 outputs low signal when water is detected
+      - delayed_on: 400ms
+      - delayed_off: 400ms
+    on_press:
+      then:
+        - script.execute: shut_down_system
+        - mqtt.publish:
+            topic: home/shutdown
+            payload: "shutdown"
+        - logger.log: "Water detected! Broadcasting shutdown to all devices via MQTT."
+  
+  - platform: gpio
+    pin: 
+      number: GPIO16
+      mode: INPUT_PULLUP
+    id: "RO_water_float_switch"
+    name: RO Water Float Switch    
+    on_press:
+      # When the float switch is ON, stop the pump
+      - mqtt.publish:
+          topic: home/RO_water_float_switch
+          payload: "ON"
+      
+      
+    on_release:
+      # When the float switch is OFF, allow normal operation
+      - mqtt.publish:
+          topic: home/RO_water_float_switch
+          payload: "OFF"
+
+  - platform: gpio
+    pin: 
+      number: GPIO17
+      mode: INPUT_PULLUP
+    id: "RO_mixing_res_float_switch"
+    name: RO mixing reseroir Float Switch    
+ 
+
+  - platform: gpio
+    id: "atlas_optical_sensor_low"
+    name: atlas optical sensor low
+    pin:
+      number: GPIO19
+      inverted: true
+      mode: 
+        input: True
+         #       pullup: true    
+    filters:
+      - delayed_on: 500ms 
+    
+  - platform: gpio
+    id: "atlas_optical_sensor_high"
+    name: atlas optical sensor high
+    pin:
+      number: GPIO18
+      inverted: true
+      mode:
+        input: true
+ #       pullup: true    
+    filters:
+      - delayed_on: 500ms
+
+  - platform: homeassistant
+    id: "fan_manual_override"
+    entity_id: switch.fan
+    on_state:
+      - script.execute: activate_manual_control
+
+  - platform: homeassistant
+    id: "dehumidifier_manual_override"
+    entity_id: switch.dehumidifier
+    on_state:
+      - script.execute: activate_manual_control
+
+switch:
+  
+  - platform: gpio
+    id: upper_mixing_res_air_pump
+    name: "upper mixing res air pump"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO27
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    id: current_culture_drain
+    name: "current_culture_drain"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO3
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: template
+    name: "Manual RO Clean Water Control"
+    id: "manual_ro_clean_water"
+    optimistic: true
+    turn_on_action:
+      - switch.turn_on: "upper_mixing_res_air_pump"
+    turn_off_action:
+      - switch.turn_off: "upper_mixing_res_air_pump"
+  
+    
+sensor:
+
+  - platform: homeassistant
+    entity_id: counter.ph_up_ml
+    id: my_counter_ph_up
+    name: "ph up Count"
+    internal: true  # Adjust the update interval as needed
+
+  - platform: internal_temperature
+    id: "esp32_internal_temperature"
+
+  - platform: htu21d
+    address: 0x40
+    temperature:
+      id: "atlas_temp_sensor_4"
+      name: Temperature Sensor
+      state_topic: "sensor/temperature"
+    humidity:
+      id: "atlas_hum_sensor_4"
+      name: Humidity Sensor
+      state_topic: "sensor/humidity"
+    update_interval: 30s
+
+  - platform: template
+    id: "atlas_vpd"
+    name: control box Vapor Pressure Deficit    
+    lambda: |-
+      const float temperature = id(atlas_temp_sensor_4).state;
+      const float humidity = id(atlas_hum_sensor_4).state;
+
+      // Check for invalid sensor readings
+      if (isnan(temperature) || isnan(humidity)) {
+        return NAN;
+      }
+
+      // Calculate saturation vapor pressure (es) and actual vapor pressure (ea)
+      const float es = 0.6108 * exp((17.27 * temperature) / (temperature + 237.3));
+      const float ea = humidity / 100.0 * es;
+      const float vpd = es - ea;
+
+      // Define acceptable VPD range (customize these values based on your environment)
+      const float vpd_min = 0.8;  // Lower bound of acceptable VPD (in kPa)
+      const float vpd_max = 1.2;  // Upper bound of acceptable VPD (in kPa)
+
+      // If in manual mode, skip automation control
+      if (id(manual_control_active)) {
+        return vpd;
+      }
+
+      // Control logic for dehumidifier and fan using Home Assistant services
+      if (vpd < vpd_min) {
+        // VPD too low, turn on dehumidifier (humidity is too high)
+        id(dehumidifier_on).execute();
+        id(fan_off).execute();
+      } else if (vpd > vpd_max) {
+        // VPD too high, turn on fan (temperature is too high or humidity is too low)
+        id(fan_on).execute();
+        id(dehumidifier_off).execute();
+      } else {
+        // VPD in acceptable range, turn off both dehumidifier and fan
+        id(dehumidifier_off).execute();
+        id(fan_off).execute();
+      }
+
+      // Return the calculated VPD
+      return vpd;
+
+    update_interval: 30s
+
+  - platform: dallasng
+    address: 0x7f5bf3d446ded028
+    id: "atlas_dallasng_temp"
+    name: upper mixing res water temp
+    resolution: 12
+    expire_after: 1000s
+    filters:
+      - filter_out: NAN 
+    
+  # pH Sensor
+  - platform: ezo
+    icon: mdi:ph
+    id: the_damn_ph
+    name: "the damn ph"
+    address: 99
+    unit_of_measurement: ""
+    accuracy_decimals: 1
+    update_interval: 1s
+    state_topic: "sensor/ph"
+
+  # EC Sensor (Atlas Scientific EZO EC)
+  - platform: ezo
+    address: 0x64  # Default I2C address for the EC sensor
+    id: atlas_ezo_ec
+    name: "EC Sensor"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    update_interval: 1s
+    state_topic: "sensor/ec"
+
+  # ORP Sensor (Atlas Scientific EZO ORP)
+  - platform: ezo
+    address: 0x62  # Default I2C address for the ORP sensor
+    id: atlas_ezo_orp
+    name: "ORP Sensor"
+    unit_of_measurement: "mV"
+    accuracy_decimals: 0
+    update_interval: 17s
+    state_topic: "sensor/orp"
+
+ 
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+    device_class: ""
+
+  
+button:
+
+  - platform: factory_reset
+    name: forty six reset 
+    
+  # pH
+  # Get Device Firmware Version
+  - platform: template
+    name: "pH - Get Information"
+    id: ph_info
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+             id(the_damn_ph).get_device_information();
+
+  # Manual Read
+  - platform: template
+    name: "pH - Manual Read"
+    id: ph_read
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).get_state();
+
+  # Perform Calibration - mid 7
+  - platform: template
+    name: "pH - Calibration - mid 7"
+    id: ph_cal_mid
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).send_custom("Cal,mid,n");
+  # Perform Calibration low 4
+  - platform: template
+    name: "pH - Calibration - low 4"
+    id: ph_cal_low
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).send_custom("Cal,low,n");
+  # Perform Calibration high 10
+  - platform: template
+    name: "pH - Calibration - high 10"
+    id: ph_cal_high
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).send_custom("Cal,high,10.00");
+
+  # Perform Calibration CLEAR
+  - platform: template
+    name: "pH - Calibration Clear"
+    id: ph_cal_clear
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).send_custom("Cal,clear");
+
+  # Perform Calibration Check
+  - platform: template
+    name: "pH - Calibration - check"
+    id: ph_cal_check
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).get_calibration();
+
+  # Perform Status Check
+  - platform: template
+    name: "pH - Staus Check"
+    id: ph_status
+    entity_category: "Config"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).send_custom("Status");
+
+  - platform: template
+    name: "Disable pH sensor light"
+    on_press:
+      then:
+        - lambda: |-
+            id(the_damn_ph).set_led_state(false);
+
+  - platform: template
+    name: "Disable EC sensor light"
+    on_press:
+      then:
+        - lambda: |-
+            id(atlas_ezo_ec).set_led_state(false);
+  - platform: template
+    name: "Disable Temp sensor light"
+    on_press:
+      then:
+        - lambda: |-
+            id(atlas_ezo_ec).set_led_state(false);
+
+
+script:
+
+  - id: activate_manual_control
+    then:
+      - globals.set:
+          id: manual_control_active
+          value: "true"
+      - delay: 5min
+      - globals.set:
+          id: manual_control_active
+          value: "false"
+
+  - id: dehumidifier_on
+    then:
+      - homeassistant.service:
+          service: switch.turn_on
+          data:
+            entity_id: switch.dehumidifier
+  - id: dehumidifier_off
+    then:
+      - homeassistant.service:
+          service: switch.turn_off
+          data:
+            entity_id: switch.dehumidifier
+  - id: fan_on
+    then:
+      - homeassistant.service:
+          service: switch.turn_on
+          data:
+            entity_id: switch.fan
+
+  - id: fan_off
+    then:
+      - homeassistant.service:
+          service: switch.turn_off
+          data:
+            entity_id: switch.fan
+
+  - id: shut_down_system
+    then:
+      - logger.log: "Water detected! Shutting down the system."
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x32"
+    address: 0x3C
+    lambda: |-
+          // 
+          it.printf(64, 0, id(font1), TextAlign::TOP_CENTER, "mixing reservoir liters");
+          // Print KG 
+          if (10 > id(my_counter_ph_up).state) 
+          {
+             it.printf(0, 60, id(font2), TextAlign::BASELINE_LEFT,  "KG: 0%.1f", id(my_counter_ph_up).state);
+          }
+          else
+          {
+             it.printf(0, 60, id(font2), TextAlign::BASELINE_LEFT,  "KG: %.1f", id(my_counter_ph_up).state);
+          }
+
+font:
+  - file: "gfonts://Roboto"
+    id: my_font
+    size: 20
+  - file: "gfonts://Comic Neue"
+    id: font1
+    size: 8
+  - file: 'gfonts://Montserrat'
+    id: font2
+    size: 30
+
+
