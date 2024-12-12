@@ -1,0 +1,269 @@
+esphome:
+  name: "forty-two"
+  friendly_name: forty two
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "3xsokmY7rg61CPrpYwQecyQS9I9Hdm+HghNz/tCCPEo="
+  
+ota:
+  - platform: esphome
+    password: "ad3e20db1ca1cebc240493cb645a5e38"
+
+wifi:                
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  use_address: 192.168.1.12
+  manual_ip: 
+    static_ip: 192.168.1.12
+    gateway: 192.168.1.1
+    subnet: 255.255.252.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Forty-Four Fallback Hotspot"
+    password: "Falpd1DUSass"
+
+mqtt:
+  broker: !secret mqtt_broker
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+  discovery_prefix: "homeassistant"
+  birth_message:
+    topic: "homeassistant/status"
+    payload: "online"
+ 
+captive_portal:  
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+
+# Configure the 16-channel relay board
+switch:
+
+  - platform: gpio
+    id: mixing_fan_1and2
+    name: "mixing fan 1&2"
+    pin:
+      number: GPIO5
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+        
+  - platform: gpio
+    id: mixing_fan_3and4
+    name: "mixing fan 3and4"
+    pin:
+      number: GPIO6
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+  
+  - platform: gpio
+    id: dosing_pump_1_ph_down
+    name: "dosing_pump_1_ph_down"
+    pin:
+      number: GPIO17
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+    state_topic: "forty_two/switch/dosing_pump_1_ph_down/state"
+    command_topic: "forty_two/switch/dosing_pump_1_ph_down/set"
+
+  - platform: gpio
+    id: dosing_pump_2_ph_up
+    name: "dosing_pump_2_ph_up"
+    pin:
+      number: GPIO19
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+    state_topic: "forty_two/switch/dosing_pump_2_ph_up/state"
+    command_topic: "forty_two/switch/dosing_pump_2_ph_up/set"
+
+  - platform: gpio
+    id: dosing_pump_3_grow_A
+    name: "dosing pump 3 grow A"
+    pin:
+      number: GPIO18
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: True
+    state_topic: "forty_two/switch/dosing_pump_3_grow_A/state"
+    command_topic: "forty_two/switch/dosing_pump_3_grow_A/set"      
+
+  - platform: gpio
+    id: dosing_pump_4_grow_B
+    name: "dosing pump 4 grow B"
+    pin:
+      number: GPIO10
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+    state_topic: "forty_two/switch/dosing_pump_4_grow_B/state"
+    command_topic: "forty_two/switch/dosing_pump__grow_B/set"
+    
+  - platform: gpio    
+    name: "diy outlet one"
+    id: diy_outlet_one
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO1
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio    
+    name: "diy outlet 2"
+    id: diy_outlet_2
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO2
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    name: "diy outlet 3"
+    id: diy_outlet_3
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO21
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    name: "diy outlet 4"
+    id: diy_outlet_4
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      number: GPIO7
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    id: irrigation_valve_1
+    name: "irrigation valve 1"
+    pin:
+      number: GPIO11
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    id: RO_jet_pump
+    name: "RO jet pump"
+    pin:
+      number: GPIO14
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    name: "diy otlet 5"
+    id: diy_outlet_5
+    pin:
+      number: GPIO16
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    name: "diy outlet 6"
+    id: diy_outlet_6
+    pin:
+      number: GPIO8
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+  - platform: gpio
+    name: "diy outlet 7"
+    id: diy_outlet_7
+    pin:
+      number: GPIO12
+      inverted: true
+      mode: 
+        output: True
+        input: false
+        pullup: false
+        pulldown: true
+
+sensor:
+
+  - platform: mqtt_subscribe
+    name: "Water Dispensed (HX711)"
+    id: forty_four_smart_scale_hx711_value
+    topic: "forty_four/sensor/hx711_value"
+    unit_of_measurement: "Liter"
+
+binary_sensor:
+
+  - platform: gpio
+    pin: 
+      number: GPIO9
+      mode: INPUT_PULLUP
+    id: current_culture_float_switch
+    name: "current culture Float Switch"    
+
+
+
+   
